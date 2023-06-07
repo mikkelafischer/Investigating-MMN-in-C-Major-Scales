@@ -1,0 +1,265 @@
+---
+title: "Neuro_Exam_2023"
+author: "Mikkel Albjerg Fischer"
+date: "2023-05-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+epochs <- read_csv('epochs.csv')
+
+```
+```{r}
+epochs_sub <- epochs %>% 
+  select('time', 'condition', 'epoch', 'Fz', 'Cz', 'Pz', 'T8', 'T7') %>% 
+  filter(between(time, 0.1, 0.252)) 
+
+epochs_sub_split <- epochs %>% 
+  select('time', 'condition', 'epoch', 'Fz', 'Cz', 'Pz', 'T8', 'T7') %>% 
+  filter(between(time, 0.1, 0.252))
+
+  
+```
+
+
+```{r}
+unique(epochs_sub$condition)
+```
+```{r}
+epochs_sub$condition <- gsub("[[:digit:]]", "", epochs_sub$condition) 
+epochs_sub$condition <- gsub("/", "", epochs_sub$condition)
+epochs_sub$condition <- gsub("Ab", "", epochs_sub$condition)
+epochs_sub$condition <- gsub("Bb", "", epochs_sub$condition)
+epochs_sub$condition <- gsub("Db", "", epochs_sub$condition)
+epochs_sub$condition <- gsub("Eb", "", epochs_sub$condition)
+epochs_sub$condition <- gsub("Gb", "", epochs_sub$condition)
+
+```
+
+```{r}
+epochs_sub_split$condition[epochs_sub_split$condition == "congruent/1" | epochs_sub_split$condition == "congruent/2" | epochs_sub_split$condition == "congruent/3" | epochs_sub_split$condition == "congruent/4" | epochs_sub_split$condition == "incongruent/Ab" |  epochs_sub_split$condition == "incongruent/Db" |  epochs_sub_split$condition == "incongruent/Eb" |  epochs_sub_split$condition == "incongruent/Bb" |  epochs_sub_split$condition == "incongruent/Gb"] <- "congruent" 
+
+epochs_sub_split$condition[epochs_sub_split$condition == "Poddball/Ab" | epochs_sub_split$condition == "Poddball/Bb" | epochs_sub_split$condition == "Poddball/Db" | epochs_sub_split$condition == "Poddball/Eb" | epochs_sub_split$condition == "Poddball/Gb"] <- "Poddball"
+
+epochs_sub_split$condition[epochs_sub_split$condition == "oddball/Ab" | epochs_sub_split$condition == "oddball/Eb"] <- "minor_odd"
+
+epochs_sub_split$condition[epochs_sub_split$condition == "oddball/Bb" | epochs_sub_split$condition == "oddball/Gb" | epochs_sub_split$condition == "oddball/Db"] <- "disharmonic_odd"
+```
+
+```{r}
+unique(epochs_sub$condition)
+unique(epochs_sub_split$condition)
+```
+```{r}
+epochs_sub <- epochs_sub %>%
+  filter(condition != "Poddball") %>% 
+  mutate(condition = ifelse(condition == "congruent" | condition == "incongruent", 1, 2)) # 1 for congruent (including both stimuli in cingruent trials and congruent stimuli in trials containing an oddball) and 2 for oddball
+
+epochs_sub_split <- epochs_sub_split %>%
+  filter(condition != "Poddball")
+
+epochs_sub$condition_2 = epochs_sub_split$condition
+```
+
+```{r}
+epochs_sub <- epochs_sub %>% 
+  mutate(segment = ifelse(epoch <= 750 , "Early_25", "Late_75"))
+```
+
+
+```{r}
+
+epochs_sub <- epochs_sub %>% 
+  mutate(condition = as.numeric(condition))
+
+epochs_sub_mean <- epochs_sub %>% 
+  group_by(epoch) %>% 
+  summarise_at(c("Fz", "Cz", "Pz", "T8", "T7"), mean) %>%
+  rename(Fz_mean = Fz, Cz_mean = Cz, Pz_mean = Pz, T8_mean = T8, T7_mean = T7)
+
+condi <- epochs_sub %>% 
+  group_by(epoch) %>% 
+  summarise(mean(condition))
+
+
+n_df <- inner_join(epochs_sub_mean, condi, by = "epoch")
+
+
+key <- epochs_sub %>% 
+  select(e=epoch,c=condition,s=segment,t=condition_2)
+
+key <- key %>% 
+  distinct(e, .keep_all = T)
+
+n_df$condition_2 = key$t
+n_df$segment = key$s
+n_df$condition = n_df$`mean(condition)`
+
+n_df <- subset(n_df, select = -c(`mean(condition)`))
+
+n_df <- n_df %>% 
+  mutate(pred = ((Fz_mean+Pz_mean+Cz_mean)/3)-((T7_mean+T8_mean)/2), z_mean = ((Fz_mean+Pz_mean+Cz_mean)/3), t_mean = ((T7_mean+T8_mean)/2))
+
+```
+
+```{r}
+
+n_df <- n_df %>% 
+  mutate(condition = as.factor(condition), segment = as.factor(segment), condition_2 = as.factor(condition_2))
+```
+
+
+```{r PLOTS Q1}
+#Does the displacement of notes in a C-major harmonic scale trigger an MMN-response in a non-trained musician?
+
+ggplot(n_df, aes(x = condition, y = pred)) + geom_boxplot() + geom_errorbar(stat = 'summary', fun.data = 'mean_se') + theme_minimal()
+
+```
+```{r PLOTS Q2}
+#Does the location of the displacement-note in the scale affect the amplitude of an eventual MMN-response? #(Minor or disharmonic)
+
+ggplot(n_df, aes(x = condition_2, y = pred)) + geom_boxplot() + geom_errorbar(stat = 'summary', fun.data = 'mean_se') + theme_minimal()
+
+```
+
+```{r Q3}
+#Does an eventual MMN-response’s amplitude diminish when the subject gets more used to the sequence? (Later in #the experiment)
+
+ggplot(rrr, aes(x = segment, y = pred)) + geom_boxplot() + geom_errorbar(stat = 'summary', fun.data = 'mean_se') +  theme_minimal()
+```
+
+```{r CHECK DISTRIBUTION AND STANDARDIZE DATA}
+
+n_df <- n_df %>% 
+  mutate(s_pred = (pred - mean(pred))/sd(pred))
+
+plot(density(n_df$s_pred))
+
+
+plot(density(rnorm(100, 0, 0.75)))
+
+```
+
+
+```{r TEST RQ1}
+
+library(brms)
+
+rq1 <- bf(condition~0+s_pred)
+
+get_prior(rq1, data = n_df)
+
+prior <- c(
+  brms::prior(normal(0, 0.7), class = b)
+)
+
+priorfit <- brm(
+  rq1, data = n_df, prior = prior, sample_prior = "only", backend = "cmdstanr", chains = 2, cores = 2, control = list(adapt_delta = 0.99, max_treedepth = 20), family = bernoulli() 
+)
+
+# Check priors
+pp_check(priorfit, ndraws = 100)
+
+fit <- brm(
+  rq1, data = n_df, prior = prior, sample_prior = T, backend = "cmdstanr", chains = 2, cores = 2, control = list(adapt_delta = 0.99, max_treedepth = 20), family = bernoulli() 
+)
+
+# Check fit
+pp_check(fit, ndraws = 100)
+
+summary(fit)
+library(brms)
+pacman::p_load(report)
+r <- report(fit, verbose = FALSE)
+r
+```
+
+
+
+```{r TEST RQ2"}
+
+rr <- n_df %>% 
+  filter(condition_2 != "congruent")
+
+rq2 <- bf(condition_2~0+s_pred)
+
+priorfit_2 <- brm(
+  rq2, data = rr, prior = prior, sample_prior = "only", backend = "cmdstanr", chains = 2, cores = 2, control = list(adapt_delta = 0.99, max_treedepth = 20), family = bernoulli() 
+)
+
+# Check priors
+pp_check(priorfit_2, ndraws = 100)
+
+fit_2 <- brm(
+  rq2, data = rr, prior = prior, sample_prior = T, backend = "cmdstanr", chains = 2, cores = 2, control = list(adapt_delta = 0.99, max_treedepth = 20), family = bernoulli() 
+)
+
+# Check fit
+pp_check(fit_2, ndraws = 100, title = "pp_check model 2")
+
+summary(fit_2)
+
+r_2 <- report(fit_2, verbose = FALSE)
+r_2
+
+```
+
+```{r TEST RQ3}
+
+rrr <- n_df %>% 
+  filter(condition == 2)
+
+rq3 <- bf(segment~0+s_pred)
+
+priorfit_3 <- brm(
+  rq3, data = rrr, prior = prior, sample_prior = "only", backend = "cmdstanr", chains = 2, cores = 2, control = list(adapt_delta = 0.99, max_treedepth = 20), family = bernoulli() 
+)
+
+# Check priors
+pp_check(priorfit_3, ndraws = 100)
+
+fit_3 <- brm(
+  rq3, data = rrr, prior = prior, sample_prior = T, backend = "cmdstanr", chains = 2, cores = 2, control = list(adapt_delta = 0.99, max_treedepth = 20), family = bernoulli() 
+)
+
+# Check fit
+pp_check(fit_3, ndraws = 100)
+
+summary(fit_3)
+
+r_3 <- report(fit_3, verbose = FALSE)
+r_3
+```
+
+```{r}
+# perform k-fold cross validation
+kf <- kfold(fit, save_fits = TRUE, chains = 1)
+kf_2 <- kfold(fit_2, save_fits = TRUE, chains = 1)
+kf_3 <- kfold(fit_3, save_fits = TRUE, chains = 1)
+
+# define a loss function
+rmse <- function(y, yrep) {
+  yrep_mean <- colMeans(yrep)
+  sqrt(mean((yrep_mean - y)^2))
+}
+
+# predict responses and evaluate the loss
+kfp <- kfold_predict(kf)
+rmse(y = kfp$y, yrep = kfp$yrep)
+
+kfp_2 <- kfold_predict(kf_2)
+rmse(y = kfp_2$y, yrep = kfp_2$yrep)
+
+kfp_3 <- kfold_predict(kf_3)
+rmse(y = kfp_3$y, yrep = kfp_3$yrep)
+```
+
